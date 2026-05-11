@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aura</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:       #0a0a0f;
+  --surface:  #12121a;
+  --surface2: #1a1a26;
+  --gold:     #c8a96e;
+  --gold2:    #dfc089;
+  --text:     #f0f0f0;
+  --muted:    #707070;
+  --border:   rgba(200, 169, 110, 0.12);
+}
+
+body {
+  font-family: 'Syne', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  height: 100dvh;
+  display: flex;
+  overflow: hidden;
+}
+
+/* ─── SIDEBAR ──────────────────────────────────────────── */
+#sidebar {
+  width: 260px;
+  min-width: 260px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 22px 20px 18px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.logo {
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  color: var(--gold);
+}
+
+.btn-admin {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  background: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  font-size: 1.25rem;
+  line-height: 1;
+  transition: border-color 0.2s, color 0.2s, background 0.2s;
+}
+.btn-admin:hover {
+  border-color: var(--gold);
+  color: var(--gold);
+  background: rgba(200,169,110,0.08);
+}
+
+#track-list {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+#track-list::-webkit-scrollbar { width: 3px; }
+#track-list::-webkit-scrollbar-track { background: transparent; }
+#track-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.track-item {
+  display: grid;
+  grid-template-columns: 24px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 12px 16px;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+  transition: background 0.15s;
+  user-select: none;
+}
+.track-item:hover { background: rgba(255,255,255,0.03); }
+.track-item.active { background: rgba(200,169,110,0.07); }
+
+.t-num {
+  font-size: 0.68rem;
+  color: var(--muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.track-item.active .t-num { color: var(--gold); }
+
+.t-info { overflow: hidden; }
+.t-name {
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.35;
+}
+.track-item.active .t-name { color: var(--gold); }
+.t-artist {
+  font-size: 0.7rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.4;
+  margin-top: 1px;
+}
+
+.t-dur {
+  font-size: 0.68rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.state-msg {
+  padding: 44px 20px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.75;
+}
+.state-msg a { color: var(--gold); text-decoration: none; }
+.state-msg a:hover { text-decoration: underline; }
+
+/* ─── PLAYER AREA ──────────────────────────────────────── */
+#player-area {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  overflow: hidden;
+}
+
+.player-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  width: 100%;
+  max-width: 420px;
+}
+
+/* ─── ARTWORK ──────────────────────────────────────────── */
+.artwork-wrap {
+  position: relative;
+  width: 240px;
+  height: 240px;
+  flex-shrink: 0;
+}
+
+.vinyl {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle,
+    #222 0%, #111 6%, #1d1d1d 7%, #111 14%,
+    #1d1d1d 15%, #111 22%, #1d1d1d 23%, #111 30%,
+    #1d1d1d 31%, #111 38%, #1d1d1d 39%, #111 46%,
+    #1d1d1d 47%, #111 54%, #0e0e0e 100%
+  );
+  opacity: 0;
+  animation: vinyl-spin 5s linear infinite;
+  animation-play-state: paused;
+  transition: opacity 0.5s ease;
+  z-index: 0;
+}
+.vinyl::after {
+  content: '';
+  position: absolute;
+  width: 46px;
+  height: 46px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--gold) 0%, #a07030 100%);
+}
+.vinyl::before {
+  content: '';
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: var(--bg);
+  z-index: 1;
+}
+body.playing .vinyl {
+  opacity: 1;
+  animation-play-state: running;
+}
+@keyframes vinyl-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.cover-img, .cover-ph {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 200px;
+  height: 200px;
+  border-radius: 14px;
+  z-index: 1;
+}
+.cover-img {
+  object-fit: cover;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.75), 0 0 0 1px rgba(255,255,255,0.05);
+}
+.cover-ph {
+  background: linear-gradient(145deg, #1c1c2e 0%, #16213e 55%, #0f2946 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.75), 0 0 0 1px rgba(255,255,255,0.05);
+}
+.cover-ph svg { opacity: 0.15; }
+
+/* ─── NOW PLAYING ──────────────────────────────────────── */
+.now-playing { text-align: center; width: 100%; }
+#track-title {
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.2;
+  margin-bottom: 5px;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#track-artist {
+  font-size: 0.88rem;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+/* ─── EQUALIZER ────────────────────────────────────────── */
+.eq-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 18px;
+  opacity: 0;
+  transition: opacity 0.4s;
+}
+body.playing .eq-bars { opacity: 1; }
+
+.eq-bars span {
+  display: block;
+  width: 3px;
+  border-radius: 2px 2px 0 0;
+  background: var(--gold);
+  animation: eq-bar 0.6s ease-in-out infinite alternate;
+}
+.eq-bars span:nth-child(1) { animation-delay: 0.00s; animation-duration: 0.55s; }
+.eq-bars span:nth-child(2) { animation-delay: 0.10s; animation-duration: 0.72s; }
+.eq-bars span:nth-child(3) { animation-delay: 0.05s; animation-duration: 0.88s; }
+.eq-bars span:nth-child(4) { animation-delay: 0.20s; animation-duration: 0.60s; }
+.eq-bars span:nth-child(5) { animation-delay: 0.15s; animation-duration: 0.76s; }
+
+@keyframes eq-bar {
+  from { height: 3px; }
+  to   { height: 18px; }
+}
+
+/* ─── PROGRESS BAR ─────────────────────────────────────── */
+.progress-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+.progress-row time {
+  font-size: 0.7rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  min-width: 30px;
+}
+#time-total { text-align: right; }
+
+.progress-track {
+  flex: 1;
+  height: 4px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 4px;
+  cursor: pointer;
+  position: relative;
+  transition: height 0.15s;
+}
+.progress-track:hover { height: 5px; }
+
+.progress-fill {
+  height: 100%;
+  background: var(--gold);
+  border-radius: 4px;
+  width: 0%;
+  position: relative;
+  pointer-events: none;
+}
+.progress-fill::after {
+  content: '';
+  position: absolute;
+  right: -5px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--gold2);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.progress-track:hover .progress-fill::after { opacity: 1; }
+
+/* ─── CONTROLS ─────────────────────────────────────────── */
+.ctrl-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.ctrl-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--muted);
+  padding: 8px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s, transform 0.1s;
+}
+.ctrl-btn:hover { color: var(--text); }
+.ctrl-btn:active { transform: scale(0.88); }
+.ctrl-btn.active { color: var(--gold); }
+
+#btn-play {
+  width: 56px;
+  height: 56px;
+  background: var(--gold);
+  color: var(--bg);
+  border-radius: 50%;
+  padding: 0;
+}
+#btn-play:hover { background: var(--gold2); color: var(--bg); }
+
+/* ─── VOLUME ───────────────────────────────────────────── */
+.vol-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.vol-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  padding: 4px;
+  transition: color 0.2s;
+}
+.vol-btn:hover { color: var(--text); }
+
+#vol-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 90px;
+  height: 4px;
+  background: rgba(255,255,255,0.1);
+  border-radius: 4px;
+  outline: none;
+  cursor: pointer;
+}
+#vol-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--gold);
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+#vol-slider::-webkit-slider-thumb:hover { transform: scale(1.25); }
+#vol-slider::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--gold);
+  border: none;
+  cursor: pointer;
+}
+</style>
+</head>
+<body>
+
+<aside id="sidebar">
+  <div class="sidebar-header">
+    <span class="logo">AURA</span>
+    <a href="admin.html" class="btn-admin" title="Painel Admin">+</a>
+  </div>
+  <div id="track-list">
+    <div class="state-msg">A carregar...</div>
+  </div>
+</aside>
+
+<main id="player-area">
+  <div class="player-center">
+
+    <div class="artwork-wrap">
+      <div class="vinyl" id="vinyl"></div>
+      <div class="cover-ph" id="cover-ph">
+        <svg width="72" height="72" viewBox="0 0 24 24" fill="white">
+          <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
+        </svg>
+      </div>
+      <img class="cover-img" id="cover-img" src="" alt="" style="display:none">
+    </div>
+
+    <div class="now-playing">
+      <h1 id="track-title">Aura</h1>
+      <p id="track-artist">Seleciona uma música</p>
+    </div>
+
+    <div class="eq-bars">
+      <span></span><span></span><span></span><span></span><span></span>
+    </div>
+
+    <div class="progress-row">
+      <time id="time-current">0:00</time>
+      <div class="progress-track" id="progress-track">
+        <div class="progress-fill" id="progress-fill"></div>
+      </div>
+      <time id="time-total">0:00</time>
+    </div>
+
+    <div class="ctrl-row">
+      <button class="ctrl-btn" id="btn-shuffle" title="Shuffle"></button>
+      <button class="ctrl-btn" id="btn-prev"    title="Anterior"></button>
+      <button class="ctrl-btn" id="btn-play"    title="Play / Pausa"></button>
+      <button class="ctrl-btn" id="btn-next"    title="Próximo"></button>
+      <button class="ctrl-btn" id="btn-repeat"  title="Repetir"></button>
+    </div>
+
+    <div class="vol-row">
+      <button class="vol-btn" id="btn-vol"></button>
+      <input type="range" id="vol-slider" min="0" max="1" step="0.01" value="0.8">
+    </div>
+
+  </div>
+</main>
+
+<audio id="audio"></audio>
+
+<script src="config.js" onerror="window.SUPABASE_URL='';window.SUPABASE_ANON_KEY='';window.ADMIN_PASSWORD='';"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>
+// ─── SVG Icons ──────────────────────────────────────────────────────────────
+const IC = {
+  play:    `<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>`,
+  pause:   `<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>`,
+  prev:    `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>`,
+  next:    `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>`,
+  shuffle: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/></svg>`,
+  repeat:  `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>`,
+  repeat1: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/><text x="11.5" y="14.5" font-size="6" fill="currentColor" stroke="none" font-family="sans-serif" font-weight="bold" text-anchor="middle">1</text></svg>`,
+  volHigh: `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0014 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>`,
+  volLow:  `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M18.5 12A4.5 4.5 0 0016 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02zM5 9v6h4l5 5V4L9 9H5z"/></svg>`,
+  volMute: `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M16.5 12A4.5 4.5 0 0014 7.97v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>`,
+};
+
+// ─── State ──────────────────────────────────────────────────────────────────
+let tracks      = [];
+let currentIdx  = -1;
+let shuffleOn   = false;
+let repeatMode  = 0;   // 0=off  1=one  2=all
+let shuffleQueue = [];
+let prevVol     = 0.8;
+
+// ─── DOM refs ───────────────────────────────────────────────────────────────
+const audio         = document.getElementById('audio');
+const trackListEl   = document.getElementById('track-list');
+const coverImg      = document.getElementById('cover-img');
+const coverPh       = document.getElementById('cover-ph');
+const titleEl       = document.getElementById('track-title');
+const artistEl      = document.getElementById('track-artist');
+const progressTrack = document.getElementById('progress-track');
+const progressFill  = document.getElementById('progress-fill');
+const timeCur       = document.getElementById('time-current');
+const timeTot       = document.getElementById('time-total');
+const btnPlay       = document.getElementById('btn-play');
+const btnPrev       = document.getElementById('btn-prev');
+const btnNext       = document.getElementById('btn-next');
+const btnShuffle    = document.getElementById('btn-shuffle');
+const btnRepeat     = document.getElementById('btn-repeat');
+const volSlider     = document.getElementById('vol-slider');
+const btnVol        = document.getElementById('btn-vol');
+
+// ─── Init ───────────────────────────────────────────────────────────────────
+function init() {
+  btnPlay.innerHTML    = IC.play;
+  btnPrev.innerHTML    = IC.prev;
+  btnNext.innerHTML    = IC.next;
+  btnShuffle.innerHTML = IC.shuffle;
+  btnRepeat.innerHTML  = IC.repeat;
+  audio.volume         = 0.8;
+  updateVolIcon();
+
+  if (!window.SUPABASE_URL || SUPABASE_URL === 'COLOCA_AQUI') {
+    trackListEl.innerHTML = `<div class="state-msg">⚠ Copia <code>config.example.js</code> para <code>config.js</code> e preenche as credenciais do Supabase.</div>`;
+    return;
+  }
+
+  try {
+    window._db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  } catch (e) {
+    trackListEl.innerHTML = `<div class="state-msg">Erro ao inicializar Supabase.<br>${e.message}</div>`;
+    return;
+  }
+
+  loadTracks();
+}
+
+// ─── Data ───────────────────────────────────────────────────────────────────
+async function loadTracks() {
+  trackListEl.innerHTML = '<div class="state-msg">A carregar...</div>';
+  const { data, error } = await window._db
+    .from('tracks')
+    .select('*')
+    .order('position', { ascending: true });
+
+  if (error) {
+    trackListEl.innerHTML = `<div class="state-msg">Erro ao carregar faixas.<br><small>${esc(error.message)}</small></div>`;
+    return;
+  }
+
+  tracks = data || [];
+  renderList();
+}
+
+function renderList() {
+  if (tracks.length === 0) {
+    trackListEl.innerHTML = `<div class="state-msg">Sem músicas ainda.<br>Vai ao <a href="admin.html">painel admin</a> para adicionar.</div>`;
+    return;
+  }
+  trackListEl.innerHTML = '';
+  tracks.forEach((t, i) => {
+    const el = document.createElement('div');
+    el.className = 'track-item' + (i === currentIdx ? ' active' : '');
+    el.innerHTML = `
+      <span class="t-num">${i + 1}</span>
+      <div class="t-info">
+        <div class="t-name">${esc(t.title)}</div>
+        <div class="t-artist">${esc(t.artist)}</div>
+      </div>
+      <span class="t-dur">${fmtDur(t.duration)}</span>
+    `;
+    el.addEventListener('click', () => loadAndPlay(i));
+    trackListEl.appendChild(el);
+  });
+}
+
+// ─── Playback ────────────────────────────────────────────────────────────────
+function loadAndPlay(idx) {
+  if (idx < 0 || idx >= tracks.length) return;
+  currentIdx = idx;
+  const t = tracks[idx];
+
+  audio.src = t.public_url;
+  audio.play().catch(() => {});
+
+  titleEl.textContent  = t.title;
+  artistEl.textContent = t.artist;
+
+  if (t.cover_url) {
+    coverImg.src          = t.cover_url;
+    coverImg.style.display = 'block';
+    coverPh.style.display  = 'none';
+  } else {
+    coverImg.style.display = 'none';
+    coverPh.style.display  = 'flex';
+  }
+
+  setPlayState(true);
+  renderList();
+}
+
+function setPlayState(playing) {
+  document.body.classList.toggle('playing', playing);
+  btnPlay.innerHTML = playing ? IC.pause : IC.play;
+}
+
+function getNextIdx() {
+  if (shuffleOn) {
+    if (shuffleQueue.length === 0) refillShuffle();
+    return shuffleQueue.length > 0 ? shuffleQueue.pop() : (currentIdx + 1) % tracks.length;
+  }
+  return (currentIdx + 1) % tracks.length;
+}
+
+function getPrevIdx() {
+  if (currentIdx <= 0) return tracks.length - 1;
+  return currentIdx - 1;
+}
+
+function refillShuffle() {
+  const indices = Array.from({ length: tracks.length }, (_, i) => i).filter(i => i !== currentIdx);
+  for (let i = indices.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [indices[i], indices[j]] = [indices[j], indices[i]];
+  }
+  shuffleQueue = indices;
+}
+
+// ─── Control events ──────────────────────────────────────────────────────────
+btnPlay.addEventListener('click', () => {
+  if (tracks.length === 0) return;
+  if (currentIdx === -1) { loadAndPlay(0); return; }
+  if (audio.paused) { audio.play().catch(() => {}); setPlayState(true); }
+  else              { audio.pause(); setPlayState(false); }
+});
+
+btnPrev.addEventListener('click', () => {
+  if (tracks.length === 0) return;
+  if (audio.currentTime > 3) { audio.currentTime = 0; return; }
+  loadAndPlay(getPrevIdx());
+});
+
+btnNext.addEventListener('click', () => {
+  if (tracks.length === 0) return;
+  loadAndPlay(getNextIdx());
+});
+
+btnShuffle.addEventListener('click', () => {
+  shuffleOn = !shuffleOn;
+  if (shuffleOn) refillShuffle();
+  btnShuffle.classList.toggle('active', shuffleOn);
+});
+
+btnRepeat.addEventListener('click', () => {
+  repeatMode = (repeatMode + 1) % 3;
+  btnRepeat.innerHTML = repeatMode === 1 ? IC.repeat1 : IC.repeat;
+  btnRepeat.classList.toggle('active', repeatMode > 0);
+});
+
+// ─── Audio events ────────────────────────────────────────────────────────────
+audio.addEventListener('ended', () => {
+  if (repeatMode === 1) {
+    audio.currentTime = 0;
+    audio.play();
+    return;
+  }
+  if (shuffleOn) {
+    loadAndPlay(getNextIdx());
+    return;
+  }
+  if (repeatMode === 2) {
+    loadAndPlay((currentIdx + 1) % tracks.length);
+  } else {
+    if (currentIdx < tracks.length - 1) loadAndPlay(currentIdx + 1);
+    else { setPlayState(false); audio.currentTime = 0; progressFill.style.width = '0%'; }
+  }
+});
+
+audio.addEventListener('timeupdate', () => {
+  if (!audio.duration || !isFinite(audio.duration)) return;
+  const pct = (audio.currentTime / audio.duration) * 100;
+  progressFill.style.width = pct + '%';
+  timeCur.textContent = fmtDur(audio.currentTime);
+  timeTot.textContent = fmtDur(audio.duration);
+});
+
+audio.addEventListener('play',  () => setPlayState(true));
+audio.addEventListener('pause', () => setPlayState(false));
+
+progressTrack.addEventListener('click', e => {
+  if (!audio.duration || !isFinite(audio.duration)) return;
+  const rect = progressTrack.getBoundingClientRect();
+  audio.currentTime = ((e.clientX - rect.left) / rect.width) * audio.duration;
+});
+
+// ─── Volume ──────────────────────────────────────────────────────────────────
+volSlider.addEventListener('input', () => {
+  audio.volume = parseFloat(volSlider.value);
+  if (audio.volume > 0) prevVol = audio.volume;
+  updateVolIcon();
+});
+
+btnVol.addEventListener('click', () => {
+  if (audio.volume > 0) {
+    prevVol = audio.volume;
+    audio.volume = 0;
+    volSlider.value = 0;
+  } else {
+    audio.volume = prevVol || 0.8;
+    volSlider.value = audio.volume;
+  }
+  updateVolIcon();
+});
+
+function updateVolIcon() {
+  if (audio.volume === 0) btnVol.innerHTML = IC.volMute;
+  else if (audio.volume < 0.5) btnVol.innerHTML = IC.volLow;
+  else btnVol.innerHTML = IC.volHigh;
+}
+
+// ─── Keyboard shortcuts ──────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  switch (e.key) {
+    case ' ':
+      e.preventDefault();
+      btnPlay.click();
+      break;
+    case 'ArrowLeft':
+      e.preventDefault();
+      audio.currentTime = Math.max(0, audio.currentTime - 5);
+      break;
+    case 'ArrowRight':
+      e.preventDefault();
+      if (isFinite(audio.duration)) audio.currentTime = Math.min(audio.duration, audio.currentTime + 5);
+      break;
+    case 'ArrowUp':
+      e.preventDefault();
+      audio.volume = Math.min(1, +(audio.volume + 0.1).toFixed(2));
+      volSlider.value = audio.volume;
+      if (audio.volume > 0) prevVol = audio.volume;
+      updateVolIcon();
+      break;
+    case 'ArrowDown':
+      e.preventDefault();
+      audio.volume = Math.max(0, +(audio.volume - 0.1).toFixed(2));
+      volSlider.value = audio.volume;
+      updateVolIcon();
+      break;
+  }
+});
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+function fmtDur(s) {
+  if (s == null || !isFinite(s)) return '—';
+  const m  = Math.floor(s / 60);
+  const ss = String(Math.floor(s % 60)).padStart(2, '0');
+  return `${m}:${ss}`;
+}
+
+function esc(str) {
+  const d = document.createElement('div');
+  d.textContent = String(str);
+  return d.innerHTML;
+}
+
+init();
+</script>
+</body>
+</html>
