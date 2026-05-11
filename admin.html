@@ -404,6 +404,59 @@ tr:hover td { background: rgba(255,255,255,0.015); }
   color: var(--muted);
   font-size: 0.82rem;
 }
+
+/* ─── URL FORM ─────────────────────────────────────────── */
+.url-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.url-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.url-row.full { grid-template-columns: 1fr; }
+.url-card input[type="text"],
+.url-card input[type="url"] {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.85rem;
+  padding: 10px 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.url-card input:focus { border-color: var(--gold); }
+.url-card input::placeholder { color: var(--muted); }
+.btn-add-url {
+  background: var(--gold);
+  color: var(--bg);
+  border: none;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 11px 24px;
+  cursor: pointer;
+  transition: background 0.2s;
+  align-self: flex-end;
+}
+.btn-add-url:hover { background: var(--gold2); }
+.btn-add-url:disabled { opacity: 0.5; cursor: default; }
+#url-feedback {
+  font-size: 0.78rem;
+  min-height: 16px;
+}
+#url-feedback.ok  { color: #5cb85c; }
+#url-feedback.err { color: var(--red); }
 </style>
 </head>
 <body>
@@ -454,6 +507,27 @@ tr:hover td { background: rgba(255,255,255,0.015); }
 
       <div id="upload-list"></div>
       <button id="btn-clear-list">Limpar lista de uploads</button>
+    </section>
+
+    <!-- URL import -->
+    <section>
+      <p class="section-title">Adicionar por URL directa</p>
+      <div class="url-card">
+        <div class="url-row full">
+          <input type="url" id="url-audio" placeholder="URL do áudio (MP3, WAV, OGG…) *">
+        </div>
+        <div class="url-row">
+          <input type="text" id="url-title"  placeholder="Título *">
+          <input type="text" id="url-artist" placeholder="Artista (opcional)">
+        </div>
+        <div class="url-row full">
+          <input type="url" id="url-cover" placeholder="URL da capa (opcional)">
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+          <p id="url-feedback"></p>
+          <button class="btn-add-url" id="btn-add-url">Adicionar</button>
+        </div>
+      </div>
     </section>
 
     <!-- Tracks table -->
@@ -542,6 +616,7 @@ function initPanel() {
     return;
   }
   setupUpload();
+  setupUrlForm();
   loadTracks();
 }
 
@@ -573,6 +648,77 @@ function setupUpload() {
   btnClear.addEventListener('click', () => {
     uploadList.innerHTML = '';
     btnClear.classList.remove('visible');
+  });
+}
+
+// ─── URL import ──────────────────────────────────────────────────────────────
+function setupUrlForm() {
+  document.getElementById('btn-add-url').addEventListener('click', addFromUrl);
+  document.getElementById('url-audio').addEventListener('keydown', e => {
+    if (e.key === 'Enter') addFromUrl();
+  });
+}
+
+async function addFromUrl() {
+  const audioUrl  = document.getElementById('url-audio').value.trim();
+  const title     = document.getElementById('url-title').value.trim();
+  const artist    = document.getElementById('url-artist').value.trim() || 'Desconhecido';
+  const coverUrl  = document.getElementById('url-cover').value.trim() || null;
+  const feedback  = document.getElementById('url-feedback');
+  const btn       = document.getElementById('btn-add-url');
+
+  if (!audioUrl) { setFeedback(feedback, 'Insere o URL do áudio.', 'err'); return; }
+  if (!title)    { setFeedback(feedback, 'Insere o título.', 'err'); return; }
+
+  btn.disabled = true;
+  setFeedback(feedback, 'A medir duração…', '');
+
+  try {
+    const duration = await getDurationFromUrl(audioUrl);
+    setFeedback(feedback, 'A guardar…', '');
+    const maxPos = await getMaxPosition();
+
+    const { error } = await db.from('tracks').insert({
+      title,
+      artist,
+      filename:     title,
+      storage_path: '',
+      public_url:   audioUrl,
+      duration,
+      position:     maxPos + 1,
+      cover_url:    coverUrl,
+    });
+    if (error) throw error;
+
+    setFeedback(feedback, '✓ Adicionado com sucesso!', 'ok');
+    document.getElementById('url-audio').value  = '';
+    document.getElementById('url-title').value  = '';
+    document.getElementById('url-artist').value = '';
+    document.getElementById('url-cover').value  = '';
+    await loadTracks();
+  } catch (err) {
+    setFeedback(feedback, `Erro: ${err.message || err}`, 'err');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function setFeedback(el, msg, type) {
+  el.textContent = msg;
+  el.className   = type ? `${type}` : '';
+}
+
+function getDurationFromUrl(url) {
+  return new Promise(resolve => {
+    const tmp   = document.createElement('audio');
+    const timer = setTimeout(() => resolve(null), 8000);
+    tmp.addEventListener('loadedmetadata', () => {
+      clearTimeout(timer);
+      resolve(isFinite(tmp.duration) ? Math.round(tmp.duration) : null);
+    });
+    tmp.addEventListener('error', () => { clearTimeout(timer); resolve(null); });
+    tmp.preload = 'metadata';
+    tmp.src     = url;
   });
 }
 
@@ -807,10 +953,12 @@ async function moveTrack(list, fromIdx, toIdx) {
 async function deleteTrack(track) {
   if (!confirm(`Apagar "${track.title}"?`)) return;
   try {
-    // Remove audio from storage
-    await db.storage.from('music').remove([track.storage_path]);
-    // Remove cover from storage if present
-    if (track.cover_url) {
+    // Remove audio from storage only if it was uploaded there
+    if (track.storage_path) {
+      await db.storage.from('music').remove([track.storage_path]);
+    }
+    // Remove cover from storage if it was uploaded there
+    if (track.cover_url && track.storage_path) {
       const coverPath = urlToStoragePath(track.cover_url);
       if (coverPath) await db.storage.from('music').remove([coverPath]);
     }
