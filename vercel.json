@@ -1,5 +1,6 @@
 {
   "rewrites": [
-    { "source": "/admin", "destination": "/admin.html" }
+    { "source": "/config.js", "destination": "/api/config" },
+    { "source": "/admin",     "destination": "/admin.html" }
   ]
 }
