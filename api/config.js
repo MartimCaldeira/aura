@@ -1,9 +1,9 @@
 module.exports = (req, res) => {
-  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+  res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-store');
-  res.end([
-    `const SUPABASE_URL = ${JSON.stringify(process.env.SUPABASE_URL || '')};`,
-    `const SUPABASE_ANON_KEY = ${JSON.stringify(process.env.SUPABASE_ANON_KEY || '')};`,
-    `const ADMIN_PASSWORD = ${JSON.stringify(process.env.ADMIN_PASSWORD || '')};`,
-  ].join('\n'));
+  res.json({
+    SUPABASE_URL:     process.env.SUPABASE_URL     || '',
+    SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY || '',
+    ADMIN_PASSWORD:   process.env.ADMIN_PASSWORD   || '',
+  });
 };

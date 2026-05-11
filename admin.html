@@ -483,7 +483,6 @@ tr:hover td { background: rgba(255,255,255,0.015); }
   </main>
 </div>
 
-<script src="/api/config" onerror="window.SUPABASE_URL='';window.SUPABASE_ANON_KEY='';window.ADMIN_PASSWORD='';"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
 <script>
@@ -850,7 +849,15 @@ function esc(str) {
 }
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
-checkAuth();
+fetch('/api/config')
+  .then(r => r.json())
+  .then(cfg => {
+    window.SUPABASE_URL      = cfg.SUPABASE_URL;
+    window.SUPABASE_ANON_KEY = cfg.SUPABASE_ANON_KEY;
+    window.ADMIN_PASSWORD    = cfg.ADMIN_PASSWORD;
+  })
+  .catch(() => {})
+  .finally(() => checkAuth());
 </script>
 </body>
 </html>
