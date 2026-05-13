@@ -459,6 +459,129 @@ tr:hover td { background: rgba(255,255,255,0.015); }
 #url-feedback.ok  { color: #5cb85c; }
 #url-feedback.err { color: var(--red); }
 
+/* ─── YOUTUBE SECTION ──────────────────────────────────── */
+.yt-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.yt-search-row {
+  display: flex;
+  gap: 10px;
+}
+.yt-search-row input {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.88rem;
+  padding: 11px 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.yt-search-row input:focus { border-color: var(--gold); }
+.yt-search-row input::placeholder { color: var(--muted); }
+
+.btn-yt-search {
+  background: var(--gold);
+  color: var(--bg);
+  border: none;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 11px 22px;
+  cursor: pointer;
+  transition: background 0.2s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.btn-yt-search:hover:not(:disabled) { background: var(--gold2); }
+.btn-yt-search:disabled { opacity: 0.5; cursor: default; }
+
+#yt-msg {
+  font-size: 0.78rem;
+  color: var(--muted);
+  min-height: 16px;
+}
+
+#yt-results {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.yt-result {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--bg);
+  border: 1px solid rgba(255,255,255,0.04);
+  transition: background 0.15s, border-color 0.15s;
+}
+.yt-result:hover { background: var(--surface2); border-color: var(--border); }
+
+.yt-thumb {
+  width: 88px;
+  height: 50px;
+  object-fit: cover;
+  border-radius: 5px;
+  flex-shrink: 0;
+  background: var(--surface2);
+}
+
+.yt-result-info { flex: 1; min-width: 0; }
+.yt-result-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+  line-height: 1.3;
+}
+.yt-result-meta {
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.btn-yt-add {
+  background: none;
+  border: 1px solid var(--gold);
+  color: var(--gold);
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 7px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.btn-yt-add:hover:not(:disabled) { background: rgba(200,169,110,0.12); }
+.btn-yt-add:disabled { opacity: 0.3; cursor: default; }
+
+#yt-upload-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+#yt-upload-list:empty { display: none; }
+
 /* ─── RESPONSIVE ───────────────────────────────────────── */
 @media (max-width: 640px) {
   header { padding: 0 16px; }
@@ -470,8 +593,11 @@ tr:hover td { background: rgba(255,255,255,0.015); }
 
   #drop-zone { padding: 32px 20px; }
 
-  /* URL form: stack all fields vertically */
+  /* URL form + YouTube: stack all fields vertically */
   .url-row { grid-template-columns: 1fr; }
+  .yt-search-row { flex-direction: column; }
+  .btn-yt-search { width: 100%; }
+  .yt-thumb { width: 64px; height: 36px; }
 
   /* Tracks table: hide artist column, simplify */
   th:nth-child(3), td:nth-child(3) { display: none; }
@@ -539,6 +665,23 @@ tr:hover td { background: rgba(255,255,255,0.015); }
 
       <div id="upload-list"></div>
       <button id="btn-clear-list">Limpar lista de uploads</button>
+    </section>
+
+    <!-- YouTube import -->
+    <section>
+      <p class="section-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="color:var(--gold);vertical-align:-2px;margin-right:5px"><path d="M21.58 7.19c-.23-.86-.91-1.54-1.77-1.77C18.25 5 12 5 12 5s-6.25 0-7.81.42c-.86.23-1.54.91-1.77 1.77C2 8.75 2 12 2 12s0 3.25.42 4.81c.23.86.91 1.54 1.77 1.77C5.75 19 12 19 12 19s6.25 0 7.81-.42c.86-.23 1.54-.91 1.77-1.77C22 15.25 22 12 22 12s0-3.25-.42-4.81zM10 15V9l5.2 3-5.2 3z"/></svg>
+        Adicionar do YouTube
+      </p>
+      <div class="yt-card">
+        <div class="yt-search-row">
+          <input type="text" id="yt-query" placeholder="Nome da música ou link do YouTube…" autocomplete="off" spellcheck="false">
+          <button class="btn-yt-search" id="yt-search-btn">Pesquisar</button>
+        </div>
+        <p id="yt-msg"></p>
+        <div id="yt-results"></div>
+        <div id="yt-upload-list"></div>
+      </div>
     </section>
 
     <!-- URL import -->
@@ -648,6 +791,7 @@ function initPanel() {
     return;
   }
   setupUpload();
+  setupYouTube();
   setupUrlForm();
   loadTracks();
 }
@@ -680,6 +824,196 @@ function setupUpload() {
   btnClear.addEventListener('click', () => {
     uploadList.innerHTML = '';
     btnClear.classList.remove('visible');
+  });
+}
+
+// ─── YouTube import ───────────────────────────────────────────────────────────
+function setupYouTube() {
+  const queryInput = document.getElementById('yt-query');
+  const searchBtn  = document.getElementById('yt-search-btn');
+  const resultsEl  = document.getElementById('yt-results');
+  const msgEl      = document.getElementById('yt-msg');
+  const uploadList = document.getElementById('yt-upload-list');
+
+  // ── Detectar se é URL do YouTube ─────────────────────────────────────────
+  function extractVideoId(s) {
+    const m = s.match(/(?:v=|youtu\.be\/|shorts\/|embed\/)([a-zA-Z0-9_-]{11})/);
+    return m ? m[1] : null;
+  }
+  function isYouTubeUrl(s) {
+    return /youtube\.com|youtu\.be/.test(s);
+  }
+
+  // ── Pesquisa / lookup ──────────────────────────────────────────────────────
+  async function search() {
+    const q = queryInput.value.trim();
+    if (!q) return;
+
+    resultsEl.innerHTML = '';
+    setMsg('', '');
+
+    if (isYouTubeUrl(q)) {
+      const id = extractVideoId(q);
+      if (id) { await lookupById(id); return; }
+    }
+
+    setBusy(true, 'A pesquisar…');
+    try {
+      const res  = await fetch(`/api/yt-search?q=${encodeURIComponent(q)}`);
+      const data = await res.json();
+      if (data.error) setMsg(data.error, '');
+      if (data.results && data.results.length > 0) {
+        setMsg('', '');
+        renderResults(data.results);
+      } else if (!data.error) {
+        setMsg('Sem resultados. Tenta um nome diferente.', '');
+      }
+    } catch (e) {
+      setMsg('Erro na pesquisa: ' + e.message, '');
+    } finally {
+      setBusy(false, 'Pesquisar');
+    }
+  }
+
+  async function lookupById(id) {
+    setBusy(true, 'A obter informações…');
+    setMsg('', '');
+    try {
+      const res  = await fetch(`/api/yt-search?id=${id}`);
+      const data = await res.json();
+      if (data.results?.length) renderResults(data.results);
+    } catch (e) {
+      setMsg('Erro: ' + e.message, '');
+    } finally {
+      setBusy(false, 'Pesquisar');
+    }
+  }
+
+  function setBusy(busy, label) {
+    searchBtn.disabled    = busy;
+    searchBtn.textContent = label;
+  }
+  function setMsg(text, cls) {
+    msgEl.textContent = text;
+    msgEl.className   = cls;
+  }
+
+  // ── Renderizar resultados ─────────────────────────────────────────────────
+  function renderResults(results) {
+    resultsEl.innerHTML = '';
+    results.forEach(v => {
+      const el = document.createElement('div');
+      el.className = 'yt-result';
+      el.innerHTML = `
+        <img class="yt-thumb" src="${esc(v.thumb || '')}" alt=""
+          onerror="this.src=''; this.style.background='var(--surface2)'">
+        <div class="yt-result-info">
+          <div class="yt-result-title">${esc(v.title)}</div>
+          <div class="yt-result-meta">${esc(v.author)}${v.duration ? ' · ' + fmtDur(v.duration) : ''}</div>
+        </div>
+        <button class="btn-yt-add">+ Adicionar</button>
+      `;
+      el.querySelector('.btn-yt-add').addEventListener('click', () => addVideo(v, el));
+      resultsEl.appendChild(el);
+    });
+  }
+
+  // ── Converter e fazer upload ──────────────────────────────────────────────
+  async function addVideo(video, resultEl) {
+    const btn = resultEl.querySelector('.btn-yt-add');
+    btn.disabled = true;
+    btn.textContent = '…';
+
+    const { artist, title } = parseYtTitle(video.title, video.author);
+    const item = createProgressItem(video.title, uploadList);
+
+    try {
+      // Passo 1 — converter via cobalt.tools (proxy no servidor)
+      setStep(item, 'A converter para MP3…', 15);
+      const audioRes = await fetch(`/api/yt-audio?id=${video.id}`);
+
+      if (!audioRes.ok) {
+        let errMsg = `Erro ${audioRes.status}`;
+        try { const j = await audioRes.json(); errMsg = j.error || errMsg; } catch {}
+        throw new Error(errMsg);
+      }
+
+      setStep(item, 'A fazer download do áudio…', 35);
+      const blob = await audioRes.blob();
+
+      if (blob.size < 1000) throw new Error('Ficheiro de áudio inválido ou vazio');
+
+      // Passo 2 — upload para o Supabase
+      setStep(item, 'A fazer upload…', 55);
+      const uuid       = crypto.randomUUID();
+      const filename   = `${video.id}.mp3`;
+      const audioPath  = `audio/${uuid}-${filename}`;
+
+      const { error: uploadErr } = await db.storage
+        .from('music')
+        .upload(audioPath, blob, { contentType: 'audio/mpeg', upsert: false });
+      if (uploadErr) throw uploadErr;
+
+      const { data: { publicUrl } } = db.storage.from('music').getPublicUrl(audioPath);
+
+      // Passo 3 — guardar na base de dados
+      setStep(item, 'A guardar na base de dados…', 85);
+      const maxPos = await getMaxPosition();
+
+      const { error: insertErr } = await db.from('tracks').insert({
+        title,
+        artist,
+        filename,
+        storage_path: audioPath,
+        public_url:   publicUrl,
+        duration:     video.duration || null,
+        position:     maxPos + 1,
+        cover_url:    video.thumb || null,
+      });
+      if (insertErr) throw insertErr;
+
+      setStep(item, 'Concluído ✓', 100, 'success');
+      btn.textContent = '✓ Adicionado';
+      await loadTracks();
+
+    } catch (err) {
+      console.error('[yt-add]', err);
+      setStep(item, `Erro ✗: ${err.message || 'Falhou'}`, 100, 'error');
+      btn.disabled    = false;
+      btn.textContent = '+ Adicionar';
+    }
+  }
+
+  // ── Limpar título/artista do YouTube ──────────────────────────────────────
+  function parseYtTitle(rawTitle, author) {
+    // Remover tags de qualidade e legendas: (Official Video), [Lyrics], etc.
+    const clean = rawTitle
+      .replace(/\s*[\(\[](official\s*(video|audio|mv|music\s*video)?|lyrics?|hd|hq|4k|visualizer|feat\.?.*?|ft\.?.*?|prod\.?.*?)[\)\]]\s*/gi, '')
+      .trim();
+
+    // Tentar formato "Artista - Título"
+    const sep = ' - ';
+    const idx = clean.indexOf(sep);
+    if (idx > 0) {
+      return {
+        artist: clean.slice(0, idx).trim(),
+        title:  clean.slice(idx + sep.length).trim() || clean,
+      };
+    }
+
+    return { artist: author || 'Desconhecido', title: clean || rawTitle };
+  }
+
+  // ── Eventos ───────────────────────────────────────────────────────────────
+  searchBtn.addEventListener('click', search);
+  queryInput.addEventListener('keydown', e => { if (e.key === 'Enter') search(); });
+
+  // Auto-detectar URL do YouTube quando colado
+  queryInput.addEventListener('input', () => {
+    const v = queryInput.value.trim();
+    if (isYouTubeUrl(v) && extractVideoId(v)) {
+      search();
+    }
   });
 }
 
@@ -828,7 +1162,7 @@ async function processFile(file) {
   }
 }
 
-function createProgressItem(filename) {
+function createProgressItem(filename, container) {
   const el = document.createElement('div');
   el.className = 'pi';
   el.innerHTML = `
@@ -838,7 +1172,8 @@ function createProgressItem(filename) {
     </div>
     <div class="pi-bar-wrap"><div class="pi-bar"></div></div>
   `;
-  uploadList.appendChild(el);
+  (container || uploadList).appendChild(el);
+  el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   return el;
 }
 
