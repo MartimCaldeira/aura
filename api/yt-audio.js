@@ -1,45 +1,112 @@
 /**
- * Converte vídeo YouTube → MP3 usando cobalt.tools (open-source)
- * e serve o áudio diretamente ao browser.
- * https://github.com/imputnet/cobalt
+ * Extrai o stream de áudio directamente do YouTube usando a Innertube
+ * API com o cliente ANDROID — devolve URLs sem cipher na maioria dos casos.
+ *
+ * Fallback: múltiplas instâncias públicas do cobalt.tools
  */
 
+// ── Innertube Android client ──────────────────────────────────────────────────
+const ANDROID_KEY = 'AIzaSyA8eiZmM1lafRM_uo-ou6T3VOqEQkd_n8c';
+const ANDROID_UA  = 'com.google.android.youtube/19.09.37 (Linux; U; Android 11) gzip';
+const ANDROID_CTX = {
+  client: {
+    clientName:       'ANDROID',
+    clientVersion:    '19.09.37',
+    androidSdkVersion: 30,
+    userAgent:        ANDROID_UA,
+    hl: 'en', gl: 'US',
+  },
+};
+
+// ── Cobalt fallback instances ─────────────────────────────────────────────────
 const COBALT_INSTANCES = [
+  'https://cobalt.api.timelessnesses.me',
+  'https://cob.nadeko.net',
+  'https://cobalt.catvibers.me',
   'https://api.cobalt.tools',
-  'https://cobalt.api.timelessnesses.me',  // instância pública alternativa
 ];
 
-async function getCobaltUrl(videoId, instance) {
-  const ytUrl = `https://www.youtube.com/watch?v=${videoId}`;
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-  const res = await fetch(`${instance}/`, {
-    method: 'POST',
+async function getYouTubeStreamUrl(videoId) {
+  const res = await fetch(
+    `https://www.youtube.com/youtubei/v1/player?key=${ANDROID_KEY}&prettyPrint=false`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type':             'application/json',
+        'User-Agent':               ANDROID_UA,
+        'X-YouTube-Client-Name':    '3',
+        'X-YouTube-Client-Version': '19.09.37',
+        'Origin':                   'https://www.youtube.com',
+      },
+      body: JSON.stringify({
+        context:       ANDROID_CTX,
+        videoId,
+        contentCheckOk: true,
+        racyCheckOk:    true,
+      }),
+      signal: AbortSignal.timeout(15000),
+    }
+  );
+
+  if (!res.ok) throw new Error(`YouTube player API: HTTP ${res.status}`);
+
+  const data    = await res.json();
+  const formats = data.streamingData?.adaptiveFormats || [];
+
+  // Filtrar streams de áudio apenas com URL directa (sem cipher)
+  const audio = formats.filter(f =>
+    f.mimeType?.startsWith('audio/') &&
+    f.url &&
+    !f.signatureCipher &&
+    !f.cipher
+  );
+
+  if (audio.length === 0) throw new Error('Stream requer desencriptação — não suportado');
+
+  // Preferir m4a (AAC) para máxima compatibilidade com browsers
+  const m4a = audio.filter(f => f.mimeType?.includes('mp4a'));
+  const pool = m4a.length > 0 ? m4a : audio;
+
+  const best = pool.sort(
+    (a, b) => (b.averageBitrate || b.bitrate || 0) - (a.averageBitrate || a.bitrate || 0)
+  )[0];
+
+  return {
+    url:      best.url,
+    mimeType: (best.mimeType || 'audio/mp4').split(';')[0].trim(),
+    ext:      best.mimeType?.includes('mp4a') ? 'm4a' : 'webm',
+  };
+}
+
+async function getCobaltUrl(videoId, instance) {
+  const r = await fetch(`${instance}/`, {
+    method:  'POST',
     headers: {
       'Content-Type': 'application/json',
       'Accept':       'application/json',
-      'User-Agent':   'Aura/1.0 (https://github.com/MartimCaldeira/aura)',
+      'User-Agent':   'Aura/1.0',
     },
     body: JSON.stringify({
-      url:           ytUrl,
+      url:           `https://www.youtube.com/watch?v=${videoId}`,
       downloadMode:  'audio',
       audioFormat:   'mp3',
       audioBitrate:  '128',
       filenameStyle: 'basic',
     }),
-    signal: AbortSignal.timeout(20000),
+    signal: AbortSignal.timeout(18000),
   });
 
-  if (!res.ok) throw new Error(`cobalt HTTP ${res.status}`);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const d = await r.json();
+  if (d.status === 'error') throw new Error(d.error?.code || 'cobalt error');
+  if (!d.url) throw new Error('cobalt: sem URL');
 
-  const data = await res.json();
-
-  if (data.status === 'error') {
-    throw new Error(`cobalt: ${data.error?.code || 'unknown error'}`);
-  }
-  if (!data.url) throw new Error('cobalt: sem URL de download');
-
-  return data.url;
+  return { url: d.url, mimeType: 'audio/mpeg', ext: 'mp3' };
 }
+
+// ── Handler ───────────────────────────────────────────────────────────────────
 
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin',  '*');
@@ -53,42 +120,53 @@ module.exports = async (req, res) => {
     return res.status(400).json({ error: 'Video ID inválido.' });
   }
 
-  let audioUrl = null;
-  let lastErr  = null;
+  let streamInfo = null;
+  const errors   = [];
 
-  // Tentar cada instância do cobalt até uma funcionar
-  for (const instance of COBALT_INSTANCES) {
-    try {
-      audioUrl = await getCobaltUrl(id, instance);
-      break;
-    } catch (e) {
-      lastErr = e;
-      console.warn(`[yt-audio] ${instance} falhou:`, e.message);
+  // ── Tentativa 1: Innertube Android (sem terceiros) ────────────────────────
+  try {
+    streamInfo = await getYouTubeStreamUrl(id);
+    console.log(`[yt-audio] Innertube OK → ${streamInfo.ext} ${streamInfo.mimeType}`);
+  } catch (e) {
+    errors.push(`Innertube: ${e.message}`);
+    console.warn('[yt-audio] Innertube falhou:', e.message);
+  }
+
+  // ── Tentativa 2: Cobalt instances ─────────────────────────────────────────
+  if (!streamInfo) {
+    for (const inst of COBALT_INSTANCES) {
+      try {
+        streamInfo = await getCobaltUrl(id, inst);
+        console.log(`[yt-audio] Cobalt OK via ${inst}`);
+        break;
+      } catch (e) {
+        errors.push(`${inst}: ${e.message}`);
+        console.warn(`[yt-audio] ${inst} falhou:`, e.message);
+      }
     }
   }
 
-  if (!audioUrl) {
-    console.error('[yt-audio] Todas as instâncias falharam:', lastErr?.message);
+  if (!streamInfo) {
     return res.status(502).json({
-      error: `Não foi possível converter: ${lastErr?.message || 'erro desconhecido'}. Tenta colar o URL do áudio directamente.`,
+      error: `Não foi possível obter o áudio. Erros: ${errors.join(' | ')}`,
     });
   }
 
-  // Fazer download do áudio e servir ao cliente
+  // ── Fazer download do stream e servir ao cliente ───────────────────────────
   try {
-    const audioRes = await fetch(audioUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0' },
+    const audioRes = await fetch(streamInfo.url, {
+      headers: { 'User-Agent': 'Mozilla/5.0', 'Range': 'bytes=0-' },
       signal:  AbortSignal.timeout(55000),
     });
 
-    if (!audioRes.ok) throw new Error(`Download falhou: HTTP ${audioRes.status}`);
+    if (!audioRes.ok) throw new Error(`Download HTTP ${audioRes.status}`);
 
-    const buffer      = await audioRes.arrayBuffer();
-    const contentType = audioRes.headers.get('content-type') || 'audio/mpeg';
+    const buffer = await audioRes.arrayBuffer();
 
-    res.setHeader('Content-Type',        contentType);
+    res.setHeader('Content-Type',        streamInfo.mimeType);
     res.setHeader('Content-Length',      buffer.byteLength);
-    res.setHeader('Content-Disposition', `attachment; filename="${id}.mp3"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${id}.${streamInfo.ext}"`);
+    res.setHeader('X-Audio-Format',      streamInfo.ext);   // client usa isto para saber a extensão
     return res.send(Buffer.from(buffer));
 
   } catch (e) {

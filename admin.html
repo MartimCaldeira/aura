@@ -928,8 +928,8 @@ function setupYouTube() {
     const item = createProgressItem(video.title, uploadList);
 
     try {
-      // Passo 1 — converter via cobalt.tools (proxy no servidor)
-      setStep(item, 'A converter para MP3…', 15);
+      // Passo 1 — obter áudio via servidor (Innertube ou cobalt fallback)
+      setStep(item, 'A obter áudio do YouTube…', 15);
       const audioRes = await fetch(`/api/yt-audio?id=${video.id}`);
 
       if (!audioRes.ok) {
@@ -938,6 +938,11 @@ function setupYouTube() {
         throw new Error(errMsg);
       }
 
+      // Detectar formato devolvido pelo servidor (m4a, webm ou mp3)
+      const audioFmt = audioRes.headers.get('X-Audio-Format') || 'mp3';
+      const mimeMap  = { mp3: 'audio/mpeg', m4a: 'audio/mp4', webm: 'audio/webm' };
+      const mimeType = mimeMap[audioFmt] || 'audio/mpeg';
+
       setStep(item, 'A fazer download do áudio…', 35);
       const blob = await audioRes.blob();
 
@@ -945,13 +950,13 @@ function setupYouTube() {
 
       // Passo 2 — upload para o Supabase
       setStep(item, 'A fazer upload…', 55);
-      const uuid       = crypto.randomUUID();
-      const filename   = `${video.id}.mp3`;
-      const audioPath  = `audio/${uuid}-${filename}`;
+      const uuid      = crypto.randomUUID();
+      const filename  = `${video.id}.${audioFmt}`;
+      const audioPath = `audio/${uuid}-${filename}`;
 
       const { error: uploadErr } = await db.storage
         .from('music')
-        .upload(audioPath, blob, { contentType: 'audio/mpeg', upsert: false });
+        .upload(audioPath, blob, { contentType: mimeType, upsert: false });
       if (uploadErr) throw uploadErr;
 
       const { data: { publicUrl } } = db.storage.from('music').getPublicUrl(audioPath);
