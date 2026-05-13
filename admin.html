@@ -918,9 +918,9 @@ function setupYouTube() {
     });
   }
 
-  // ── Obter áudio no browser via Piped API (sem passar pelo servidor) ─────────
-  // O browser do utilizador não é bloqueado pelo YouTube/Piped, ao contrário
-  // dos IPs da AWS/Vercel que ficam bloqueados.
+  // ── Obter áudio no browser via Piped API ─────────────────────────────────────
+  // O browser do utilizador não é bloqueado pelo YouTube, ao contrário dos IPs
+  // da AWS/Vercel. Tentamos Piped → Invidious → servidor como cascata.
   const PIPED_INSTANCES = [
     'https://pipedapi.kavin.rocks',
     'https://piped-api.privacy.com.de',
@@ -928,14 +928,27 @@ function setupYouTube() {
     'https://pipedapi.adminforge.de',
     'https://watchapi.whatever.social',
     'https://pipedapi.drgns.space',
+    'https://pipedapi.tokhmi.xyz',
+    'https://api.piped.yt',
   ];
 
-  async function fetchAudioInBrowser(videoId, item) {
+  const INVIDIOUS_INSTANCES = [
+    'https://yewtu.be',
+    'https://inv.riverside.rocks',
+    'https://yt.artemislena.eu',
+    'https://invidious.privacyredirect.com',
+    'https://iv.melmac.space',
+    'https://invidious.nerdvpn.de',
+    'https://invidious.projectsegfau.lt',
+    'https://invidious.tiekoetter.com',
+    'https://invidious.lunar.icu',
+    'https://invidious.slipfox.xyz',
+  ];
+
+  async function fetchAudioViaPiped(videoId, item) {
     for (const inst of PIPED_INSTANCES) {
       try {
-        setStep(item, `A obter streams (${inst.replace('https://', '')})…`, 18);
-
-        // 1. Obter lista de streams do Piped
+        setStep(item, `Piped: ${inst.replace('https://', '')}…`, 15);
         const r = await fetch(`${inst}/streams/${videoId}`, {
           signal: AbortSignal.timeout(10000),
         });
@@ -943,7 +956,6 @@ function setupYouTube() {
         const d = await r.json();
         if (d.error || !d.audioStreams?.length) throw new Error(d.error || 'sem streams');
 
-        // 2. Escolher melhor stream (preferir M4A/AAC)
         const streams = d.audioStreams;
         const m4a     = streams.filter(s => s.format === 'M4A' || s.mimeType?.includes('mp4'));
         const pool    = m4a.length ? m4a : streams;
@@ -951,9 +963,7 @@ function setupYouTube() {
         if (!best?.url) throw new Error('sem URL de stream');
 
         setStep(item, 'A fazer download do áudio…', 35);
-
-        // 3. Descarregar o blob de áudio directamente no browser
-        const audioRes = await fetch(best.url, { signal: AbortSignal.timeout(90000) });
+        const audioRes = await fetch(best.url, { signal: AbortSignal.timeout(120000) });
         if (!audioRes.ok) throw new Error(`download HTTP ${audioRes.status}`);
 
         const blob = await audioRes.blob();
@@ -962,14 +972,74 @@ function setupYouTube() {
         const ext      = best.format?.toUpperCase() === 'M4A' ? 'm4a' : 'webm';
         const mimeType = best.mimeType?.split(';')[0] || 'audio/mp4';
 
-        console.log(`[piped-browser] OK via ${inst} → ${ext} ${(blob.size/1e6).toFixed(1)}MB`);
+        console.log(`[piped] OK via ${inst} → ${ext} ${(blob.size/1e6).toFixed(1)}MB`);
         return { blob, ext, mimeType };
-
       } catch (e) {
-        console.warn(`[piped-browser] ${inst}: ${e.message}`);
+        console.warn(`[piped] ${inst}: ${e.message}`);
       }
     }
-    throw new Error('Nenhuma instância do Piped respondeu. Tenta colar o URL do áudio directamente.');
+    throw new Error('Piped: todas as instâncias falharam');
+  }
+
+  async function fetchAudioViaInvidious(videoId, item) {
+    for (const inst of INVIDIOUS_INSTANCES) {
+      try {
+        setStep(item, `Invidious: ${inst.replace('https://', '')}…`, 22);
+
+        // Obter metadados com URLs proxied pelo Invidious (local=true)
+        const r = await fetch(`${inst}/api/v1/videos/${videoId}?local=true`, {
+          headers: { Accept: 'application/json' },
+          signal: AbortSignal.timeout(10000),
+        });
+        if (!r.ok) throw new Error(`API HTTP ${r.status}`);
+        const d = await r.json();
+
+        const audioFmts = (d.adaptiveFormats || []).filter(
+          f => f.type?.startsWith('audio/') && (f.url || f.itag)
+        );
+        if (!audioFmts.length) throw new Error('sem formatos de áudio');
+
+        // Preferir m4a/mp4a
+        const m4a  = audioFmts.filter(f => f.type?.includes('mp4a'));
+        const pool = m4a.length ? m4a : audioFmts;
+        pool.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
+        const chosen = pool[0];
+
+        const ext      = chosen.type?.includes('mp4a') ? 'm4a' : 'webm';
+        const mimeType = chosen.type?.split(';')[0] || 'audio/mp4';
+
+        // URL proxied pelo Invidious (tem CORS headers)
+        // Se local=true funcionou, a URL já aponta para o proxy da instância.
+        // Caso contrário, construímos manualmente com /latest_version.
+        let streamUrl = chosen.url || '';
+        if (!streamUrl || streamUrl.includes('googlevideo.com')) {
+          streamUrl = `${inst}/latest_version?id=${videoId}&itag=${chosen.itag}&local=true`;
+        }
+
+        setStep(item, 'A fazer download do áudio…', 40);
+        const dlRes = await fetch(streamUrl, { signal: AbortSignal.timeout(120000) });
+        if (!dlRes.ok) throw new Error(`download HTTP ${dlRes.status}`);
+
+        const blob = await dlRes.blob();
+        if (blob.size < 8000) throw new Error('ficheiro demasiado pequeno');
+
+        console.log(`[invidious] OK via ${inst} → ${ext} ${(blob.size/1e6).toFixed(1)}MB`);
+        return { blob, ext, mimeType };
+      } catch (e) {
+        console.warn(`[invidious] ${inst}: ${e.message}`);
+      }
+    }
+    throw new Error('Invidious: todas as instâncias falharam');
+  }
+
+  // Mantemos o nome original para compatibilidade (tenta Piped depois Invidious)
+  async function fetchAudioInBrowser(videoId, item) {
+    try {
+      return await fetchAudioViaPiped(videoId, item);
+    } catch (pipedErr) {
+      console.warn('[yt] Piped falhou, tentando Invidious:', pipedErr.message);
+      return await fetchAudioViaInvidious(videoId, item);
+    }
   }
 
   // ── Converter e fazer upload ──────────────────────────────────────────────

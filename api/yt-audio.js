@@ -18,6 +18,8 @@ module.exports = async (req, res) => {
 
   try {
     const info = await ytdl.getInfo(`https://www.youtube.com/watch?v=${id}`, {
+      // iOS client bypasses bot detection better than the default WEB client
+      playerClients: ['ios', 'mweb'],
       requestOptions: {
         headers: {
           'Accept-Language': 'en-US,en;q=0.9',
