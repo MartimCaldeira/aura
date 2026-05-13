@@ -918,6 +918,60 @@ function setupYouTube() {
     });
   }
 
+  // ── Obter áudio no browser via Piped API (sem passar pelo servidor) ─────────
+  // O browser do utilizador não é bloqueado pelo YouTube/Piped, ao contrário
+  // dos IPs da AWS/Vercel que ficam bloqueados.
+  const PIPED_INSTANCES = [
+    'https://pipedapi.kavin.rocks',
+    'https://piped-api.privacy.com.de',
+    'https://pipedapi.in',
+    'https://pipedapi.adminforge.de',
+    'https://watchapi.whatever.social',
+    'https://pipedapi.drgns.space',
+  ];
+
+  async function fetchAudioInBrowser(videoId, item) {
+    for (const inst of PIPED_INSTANCES) {
+      try {
+        setStep(item, `A obter streams (${inst.replace('https://', '')})…`, 18);
+
+        // 1. Obter lista de streams do Piped
+        const r = await fetch(`${inst}/streams/${videoId}`, {
+          signal: AbortSignal.timeout(10000),
+        });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const d = await r.json();
+        if (d.error || !d.audioStreams?.length) throw new Error(d.error || 'sem streams');
+
+        // 2. Escolher melhor stream (preferir M4A/AAC)
+        const streams = d.audioStreams;
+        const m4a     = streams.filter(s => s.format === 'M4A' || s.mimeType?.includes('mp4'));
+        const pool    = m4a.length ? m4a : streams;
+        const best    = pool.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))[0];
+        if (!best?.url) throw new Error('sem URL de stream');
+
+        setStep(item, 'A fazer download do áudio…', 35);
+
+        // 3. Descarregar o blob de áudio directamente no browser
+        const audioRes = await fetch(best.url, { signal: AbortSignal.timeout(90000) });
+        if (!audioRes.ok) throw new Error(`download HTTP ${audioRes.status}`);
+
+        const blob = await audioRes.blob();
+        if (blob.size < 8000) throw new Error('ficheiro demasiado pequeno');
+
+        const ext      = best.format?.toUpperCase() === 'M4A' ? 'm4a' : 'webm';
+        const mimeType = best.mimeType?.split(';')[0] || 'audio/mp4';
+
+        console.log(`[piped-browser] OK via ${inst} → ${ext} ${(blob.size/1e6).toFixed(1)}MB`);
+        return { blob, ext, mimeType };
+
+      } catch (e) {
+        console.warn(`[piped-browser] ${inst}: ${e.message}`);
+      }
+    }
+    throw new Error('Nenhuma instância do Piped respondeu. Tenta colar o URL do áudio directamente.');
+  }
+
   // ── Converter e fazer upload ──────────────────────────────────────────────
   async function addVideo(video, resultEl) {
     const btn = resultEl.querySelector('.btn-yt-add');
@@ -928,30 +982,36 @@ function setupYouTube() {
     const item = createProgressItem(video.title, uploadList);
 
     try {
-      // Passo 1 — obter áudio via servidor (Innertube ou cobalt fallback)
-      setStep(item, 'A obter áudio do YouTube…', 15);
-      const audioRes = await fetch(`/api/yt-audio?id=${video.id}`);
+      setStep(item, 'A iniciar…', 5);
 
-      if (!audioRes.ok) {
-        let errMsg = `Erro ${audioRes.status}`;
-        try { const j = await audioRes.json(); errMsg = j.error || errMsg; } catch {}
-        throw new Error(errMsg);
+      // ── Passo 1: obter áudio (browser-first, servidor como fallback) ──────
+      let blob, ext, mimeType;
+
+      try {
+        // Tentar directamente no browser (mais fiável — usa o IP do utilizador)
+        ({ blob, ext, mimeType } = await fetchAudioInBrowser(video.id, item));
+      } catch (browserErr) {
+        console.warn('[yt] Browser falhou, tentando servidor:', browserErr.message);
+        setStep(item, 'A converter via servidor…', 30);
+
+        const audioRes = await fetch(`/api/yt-audio?id=${video.id}`);
+        if (!audioRes.ok) {
+          let msg = `Erro servidor ${audioRes.status}`;
+          try { const j = await audioRes.json(); msg = j.error || msg; } catch {}
+          throw new Error(msg);
+        }
+        ext      = audioRes.headers.get('X-Audio-Format') || 'mp3';
+        mimeType = { mp3: 'audio/mpeg', m4a: 'audio/mp4', webm: 'audio/webm' }[ext] || 'audio/mpeg';
+        setStep(item, 'A fazer download…', 45);
+        blob = await audioRes.blob();
       }
 
-      // Detectar formato devolvido pelo servidor (m4a, webm ou mp3)
-      const audioFmt = audioRes.headers.get('X-Audio-Format') || 'mp3';
-      const mimeMap  = { mp3: 'audio/mpeg', m4a: 'audio/mp4', webm: 'audio/webm' };
-      const mimeType = mimeMap[audioFmt] || 'audio/mpeg';
+      if (!blob || blob.size < 5000) throw new Error('Ficheiro de áudio inválido ou vazio');
 
-      setStep(item, 'A fazer download do áudio…', 35);
-      const blob = await audioRes.blob();
-
-      if (blob.size < 1000) throw new Error('Ficheiro de áudio inválido ou vazio');
-
-      // Passo 2 — upload para o Supabase
-      setStep(item, 'A fazer upload…', 55);
+      // ── Passo 2: upload para o Supabase ──────────────────────────────────
+      setStep(item, 'A fazer upload…', 62);
       const uuid      = crypto.randomUUID();
-      const filename  = `${video.id}.${audioFmt}`;
+      const filename  = `${video.id}.${ext}`;
       const audioPath = `audio/${uuid}-${filename}`;
 
       const { error: uploadErr } = await db.storage
@@ -961,7 +1021,7 @@ function setupYouTube() {
 
       const { data: { publicUrl } } = db.storage.from('music').getPublicUrl(audioPath);
 
-      // Passo 3 — guardar na base de dados
+      // ── Passo 3: guardar na base de dados ─────────────────────────────────
       setStep(item, 'A guardar na base de dados…', 85);
       const maxPos = await getMaxPosition();
 
