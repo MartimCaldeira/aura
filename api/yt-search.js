@@ -1,18 +1,74 @@
-// Pesquisa YouTube via instâncias públicas do Invidious (sem chave de API)
-const INSTANCES = [
-  'iv.nboeck.de',
-  'invidious.io.lol',
-  'yt.cdaut.de',
-  'inv.tux.pizza',
-  'invidious.privacyredirect.com',
-];
+/**
+ * Pesquisa YouTube usando a Innertube API (API interna do youtube.com)
+ * e lookup de vídeo por ID via oEmbed API oficial.
+ * Nenhuma chave de API necessária.
+ */
 
-async function tryFetch(url) {
-  const r = await fetch(url, { signal: AbortSignal.timeout(6000) });
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  const data = await r.json();
-  return data;
+// Chave pública embebida pelo próprio youtube.com no cliente web
+const YT_KEY = 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8';
+
+const INNERTUBE_CONTEXT = {
+  client: {
+    clientName:    'WEB',
+    clientVersion: '2.20231121.08.00',
+    hl:            'pt',
+    gl:            'PT',
+  },
+};
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function parseDuration(str) {
+  // "3:45" → 225 s   "1:23:45" → 5025 s
+  if (!str) return null;
+  const parts = str.split(':').map(Number);
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  return null;
 }
+
+function parseInnertubeResults(data) {
+  const out = [];
+  try {
+    const sections =
+      data?.contents
+          ?.twoColumnSearchResultsRenderer
+          ?.primaryContents
+          ?.sectionListRenderer
+          ?.contents ?? [];
+
+    for (const section of sections) {
+      const items = section?.itemSectionRenderer?.contents ?? [];
+      for (const item of items) {
+        const vr = item?.videoRenderer;
+        if (!vr?.videoId) continue;
+
+        const title  = vr.title?.runs?.[0]?.text
+                    || vr.title?.simpleText
+                    || 'Sem título';
+        const author = vr.ownerText?.runs?.[0]?.text
+                    || vr.shortBylineText?.runs?.[0]?.text
+                    || 'Desconhecido';
+        const lenStr = vr.lengthText?.simpleText || '';
+
+        out.push({
+          id:       vr.videoId,
+          title,
+          author,
+          duration: parseDuration(lenStr),
+          thumb:    `https://img.youtube.com/vi/${vr.videoId}/mqdefault.jpg`,
+        });
+
+        if (out.length >= 8) return out;
+      }
+    }
+  } catch (e) {
+    console.error('[parseInnertubeResults]', e.message);
+  }
+  return out;
+}
+
+// ── Handler ───────────────────────────────────────────────────────────────────
 
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -20,26 +76,29 @@ module.exports = async (req, res) => {
 
   const { q, id } = req.query;
 
-  // ── Lookup de um vídeo específico por ID ──────────────────────────────────
+  // ── Lookup por ID (oEmbed — API oficial, sem autenticação) ────────────────
   if (id) {
-    for (const inst of INSTANCES) {
-      try {
-        const data = await tryFetch(
-          `https://${inst}/api/v1/videos/${id}?fields=videoId,title,author,lengthSeconds`
-        );
-        if (!data || !data.videoId) continue;
+    try {
+      const r = await fetch(
+        `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${encodeURIComponent(id)}&format=json`,
+        { signal: AbortSignal.timeout(6000) }
+      );
+      if (r.ok) {
+        const d = await r.json();
         return res.json({
           results: [{
-            id:       data.videoId,
-            title:    data.title    || 'Sem título',
-            author:   data.author   || 'Desconhecido',
-            duration: data.lengthSeconds || null,
-            thumb:    `https://img.youtube.com/vi/${data.videoId}/mqdefault.jpg`,
+            id,
+            title:    d.title       || 'Sem título',
+            author:   d.author_name || 'Desconhecido',
+            duration: null,
+            thumb:    `https://img.youtube.com/vi/${id}/mqdefault.jpg`,
           }],
         });
-      } catch { /* tentar próxima instância */ }
+      }
+    } catch (e) {
+      console.warn('[yt-search] oEmbed falhou:', e.message);
     }
-    // Fallback: retorna info mínima mesmo sem a instância
+    // Fallback mínimo
     return res.json({
       results: [{
         id,
@@ -51,30 +110,48 @@ module.exports = async (req, res) => {
     });
   }
 
-  // ── Pesquisa por texto ────────────────────────────────────────────────────
-  if (!q || !q.trim()) return res.json({ results: [] });
+  // ── Pesquisa por texto (Innertube API) ─────────────────────────────────────
+  const query = (q || '').trim();
+  if (!query) return res.json({ results: [] });
 
-  for (const inst of INSTANCES) {
-    try {
-      const data = await tryFetch(
-        `https://${inst}/api/v1/search?q=${encodeURIComponent(q.trim())}&type=video&fields=videoId,title,author,lengthSeconds`
-      );
-      if (!Array.isArray(data) || data.length === 0) continue;
+  try {
+    const r = await fetch(
+      `https://www.youtube.com/youtubei/v1/search?key=${YT_KEY}&prettyPrint=false`,
+      {
+        method:  'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent':   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept-Language': 'pt-PT,pt;q=0.9,en;q=0.8',
+          'Origin':  'https://www.youtube.com',
+          'Referer': `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`,
+          'X-YouTube-Client-Name':    '1',
+          'X-YouTube-Client-Version': '2.20231121.08.00',
+        },
+        body: JSON.stringify({
+          context: INNERTUBE_CONTEXT,
+          query,
+          params: 'EgIQAQ==',   // filtro: só vídeos
+        }),
+        signal: AbortSignal.timeout(10000),
+      }
+    );
 
-      return res.json({
-        results: data.slice(0, 8).map(v => ({
-          id:       v.videoId,
-          title:    v.title    || 'Sem título',
-          author:   v.author   || 'Desconhecido',
-          duration: v.lengthSeconds || null,
-          thumb:    `https://img.youtube.com/vi/${v.videoId}/mqdefault.jpg`,
-        })),
-      });
-    } catch { /* tentar próxima instância */ }
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+
+    const data    = await r.json();
+    const results = parseInnertubeResults(data);
+
+    if (results.length === 0) {
+      return res.json({ results: [], error: 'Sem resultados para essa pesquisa.' });
+    }
+    return res.json({ results });
+
+  } catch (err) {
+    console.error('[yt-search] Innertube falhou:', err.message);
+    return res.json({
+      results: [],
+      error: 'Pesquisa indisponível. Cola o link do YouTube directamente.',
+    });
   }
-
-  return res.json({
-    results: [],
-    error: 'Pesquisa indisponível. Cola o link do YouTube directamente.',
-  });
 };
