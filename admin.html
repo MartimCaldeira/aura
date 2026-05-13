@@ -994,16 +994,25 @@ function setupYouTube() {
         console.warn('[yt] Browser falhou, tentando servidor:', browserErr.message);
         setStep(item, 'A converter via servidor…', 30);
 
-        const audioRes = await fetch(`/api/yt-audio?id=${video.id}`);
-        if (!audioRes.ok) {
-          let msg = `Erro servidor ${audioRes.status}`;
-          try { const j = await audioRes.json(); msg = j.error || msg; } catch {}
+        // Servidor devolve { url, mimeType, ext } — URL directa decifrada pelo ytdl-core
+        const apiRes = await fetch(`/api/yt-audio?id=${video.id}`);
+        if (!apiRes.ok) {
+          let msg = `Erro servidor ${apiRes.status}`;
+          try { const j = await apiRes.json(); msg = j.error || msg; } catch {}
           throw new Error(msg);
         }
-        ext      = audioRes.headers.get('X-Audio-Format') || 'mp3';
-        mimeType = { mp3: 'audio/mpeg', m4a: 'audio/mp4', webm: 'audio/webm' }[ext] || 'audio/mpeg';
-        setStep(item, 'A fazer download…', 45);
-        blob = await audioRes.blob();
+        const apiData = await apiRes.json();
+        if (!apiData.url) throw new Error('Servidor não devolveu URL de áudio.');
+        ext      = apiData.ext      || 'm4a';
+        mimeType = apiData.mimeType || 'audio/mp4';
+
+        // Descarregar o áudio directamente do YouTube no browser do utilizador
+        setStep(item, 'A fazer download do áudio…', 40);
+        const dlRes = await fetch(apiData.url, {
+          headers: { 'User-Agent': 'Mozilla/5.0', Range: 'bytes=0-' },
+        });
+        if (!dlRes.ok) throw new Error(`Download directo falhou: HTTP ${dlRes.status}`);
+        blob = await dlRes.blob();
       }
 
       if (!blob || blob.size < 5000) throw new Error('Ficheiro de áudio inválido ou vazio');

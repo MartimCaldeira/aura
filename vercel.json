@@ -2,5 +2,8 @@
   "rewrites": [
     { "source": "/config.js", "destination": "/api/config" },
     { "source": "/admin",     "destination": "/admin.html" }
-  ]
+  ],
+  "functions": {
+    "api/yt-audio.js": { "maxDuration": 30 }
+  }
 }
