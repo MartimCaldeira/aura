@@ -918,18 +918,30 @@ function setupYouTube() {
     });
   }
 
-  // ── Obter áudio no browser via Piped API ─────────────────────────────────────
-  // O browser do utilizador não é bloqueado pelo YouTube, ao contrário dos IPs
-  // da AWS/Vercel. Tentamos Piped → Invidious → servidor como cascata.
+  // ── Obter áudio no browser (cascata de 3 métodos) ────────────────────────────
+  // A AWS/Vercel bloqueia pedidos ao YouTube. O browser do utilizador não é
+  // bloqueado. Cascata: Piped → Cobalt → Invidious.
+
   const PIPED_INSTANCES = [
     'https://pipedapi.kavin.rocks',
     'https://piped-api.privacy.com.de',
-    'https://pipedapi.in',
     'https://pipedapi.adminforge.de',
     'https://watchapi.whatever.social',
-    'https://pipedapi.drgns.space',
     'https://pipedapi.tokhmi.xyz',
     'https://api.piped.yt',
+    'https://pipedapi.drgns.space',
+    'https://pipedapi.in',
+  ];
+
+  // Cobalt: converte YouTube em áudio com CORS headers.
+  // Funciona do browser (IP do utilizador); era bloqueado quando chamado do servidor.
+  const COBALT_INSTANCES = [
+    'https://api.cobalt.tools',
+    'https://cobalt.api.timelessnesses.me',
+    'https://cob.nadeko.net',
+    'https://cobalt.catvibers.me',
+    'https://co.wuk.sh',
+    'https://cobalt.esmailelbob.xyz',
   ];
 
   const INVIDIOUS_INSTANCES = [
@@ -937,20 +949,19 @@ function setupYouTube() {
     'https://inv.riverside.rocks',
     'https://yt.artemislena.eu',
     'https://invidious.privacyredirect.com',
-    'https://iv.melmac.space',
     'https://invidious.nerdvpn.de',
     'https://invidious.projectsegfau.lt',
     'https://invidious.tiekoetter.com',
     'https://invidious.lunar.icu',
-    'https://invidious.slipfox.xyz',
   ];
 
+  // ── Método 1: Piped ──────────────────────────────────────────────────────────
   async function fetchAudioViaPiped(videoId, item) {
     for (const inst of PIPED_INSTANCES) {
       try {
-        setStep(item, `Piped: ${inst.replace('https://', '')}…`, 15);
+        setStep(item, `Piped: ${inst.replace('https://', '')}…`, 12);
         const r = await fetch(`${inst}/streams/${videoId}`, {
-          signal: AbortSignal.timeout(10000),
+          signal: AbortSignal.timeout(9000),
         });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const d = await r.json();
@@ -962,7 +973,7 @@ function setupYouTube() {
         const best    = pool.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))[0];
         if (!best?.url) throw new Error('sem URL de stream');
 
-        setStep(item, 'A fazer download do áudio…', 35);
+        setStep(item, 'Piped: a fazer download…', 32);
         const audioRes = await fetch(best.url, { signal: AbortSignal.timeout(120000) });
         if (!audioRes.ok) throw new Error(`download HTTP ${audioRes.status}`);
 
@@ -971,7 +982,6 @@ function setupYouTube() {
 
         const ext      = best.format?.toUpperCase() === 'M4A' ? 'm4a' : 'webm';
         const mimeType = best.mimeType?.split(';')[0] || 'audio/mp4';
-
         console.log(`[piped] OK via ${inst} → ${ext} ${(blob.size/1e6).toFixed(1)}MB`);
         return { blob, ext, mimeType };
       } catch (e) {
@@ -981,25 +991,60 @@ function setupYouTube() {
     throw new Error('Piped: todas as instâncias falharam');
   }
 
+  // ── Método 2: Cobalt (browser-side; IP do utilizador não é bloqueado) ────────
+  async function fetchAudioViaCobalt(videoId, item) {
+    for (const inst of COBALT_INSTANCES) {
+      try {
+        setStep(item, `Cobalt: ${inst.replace('https://', '')}…`, 38);
+        const r = await fetch(`${inst}/`, {
+          method:  'POST',
+          headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+          body:    JSON.stringify({
+            url:          `https://www.youtube.com/watch?v=${videoId}`,
+            downloadMode: 'audio',
+            audioFormat:  'mp3',
+            audioBitrate: '128',
+          }),
+          signal: AbortSignal.timeout(15000),
+        });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const d = await r.json();
+        if (d.status === 'error') throw new Error(d.error?.code || JSON.stringify(d.error));
+        const audioUrl = d.url || d.tunnel;
+        if (!audioUrl) throw new Error('sem URL na resposta');
+
+        setStep(item, 'Cobalt: a fazer download…', 52);
+        const dlRes = await fetch(audioUrl, { signal: AbortSignal.timeout(120000) });
+        if (!dlRes.ok) throw new Error(`download HTTP ${dlRes.status}`);
+
+        const blob = await dlRes.blob();
+        if (blob.size < 8000) throw new Error('ficheiro demasiado pequeno');
+        console.log(`[cobalt] OK via ${inst} → ${(blob.size/1e6).toFixed(1)}MB`);
+        return { blob, ext: 'mp3', mimeType: 'audio/mpeg' };
+      } catch (e) {
+        console.warn(`[cobalt] ${inst}: ${e.message}`);
+      }
+    }
+    throw new Error('Cobalt: todas as instâncias falharam');
+  }
+
+  // ── Método 3: Invidious (com corsproxy.io para contornar redirect CORS) ──────
   async function fetchAudioViaInvidious(videoId, item) {
     for (const inst of INVIDIOUS_INSTANCES) {
       try {
-        setStep(item, `Invidious: ${inst.replace('https://', '')}…`, 22);
-
-        // Obter metadados com URLs proxied pelo Invidious (local=true)
-        const r = await fetch(`${inst}/api/v1/videos/${videoId}?local=true`, {
+        setStep(item, `Invidious: ${inst.replace('https://', '')}…`, 58);
+        const r = await fetch(`${inst}/api/v1/videos/${videoId}`, {
           headers: { Accept: 'application/json' },
-          signal: AbortSignal.timeout(10000),
+          signal:  AbortSignal.timeout(10000),
         });
         if (!r.ok) throw new Error(`API HTTP ${r.status}`);
         const d = await r.json();
 
         const audioFmts = (d.adaptiveFormats || []).filter(
-          f => f.type?.startsWith('audio/') && (f.url || f.itag)
+          f => f.type?.startsWith('audio/') && f.itag
         );
         if (!audioFmts.length) throw new Error('sem formatos de áudio');
 
-        // Preferir m4a/mp4a
         const m4a  = audioFmts.filter(f => f.type?.includes('mp4a'));
         const pool = m4a.length ? m4a : audioFmts;
         pool.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
@@ -1008,21 +1053,17 @@ function setupYouTube() {
         const ext      = chosen.type?.includes('mp4a') ? 'm4a' : 'webm';
         const mimeType = chosen.type?.split(';')[0] || 'audio/mp4';
 
-        // URL proxied pelo Invidious (tem CORS headers)
-        // Se local=true funcionou, a URL já aponta para o proxy da instância.
-        // Caso contrário, construímos manualmente com /latest_version.
-        let streamUrl = chosen.url || '';
-        if (!streamUrl || streamUrl.includes('googlevideo.com')) {
-          streamUrl = `${inst}/latest_version?id=${videoId}&itag=${chosen.itag}&local=true`;
-        }
+        // Invidious /latest_version pode redirecionar para googlevideo (sem CORS).
+        // Usamos corsproxy.io para seguir o redirect e obter o ficheiro.
+        const streamUrl  = `${inst}/latest_version?id=${videoId}&itag=${chosen.itag}&local=true`;
+        const proxiedUrl = `https://corsproxy.io/?${encodeURIComponent(streamUrl)}`;
 
-        setStep(item, 'A fazer download do áudio…', 40);
-        const dlRes = await fetch(streamUrl, { signal: AbortSignal.timeout(120000) });
+        setStep(item, 'Invidious: a fazer download…', 68);
+        const dlRes = await fetch(proxiedUrl, { signal: AbortSignal.timeout(120000) });
         if (!dlRes.ok) throw new Error(`download HTTP ${dlRes.status}`);
 
         const blob = await dlRes.blob();
         if (blob.size < 8000) throw new Error('ficheiro demasiado pequeno');
-
         console.log(`[invidious] OK via ${inst} → ${ext} ${(blob.size/1e6).toFixed(1)}MB`);
         return { blob, ext, mimeType };
       } catch (e) {
@@ -1032,14 +1073,18 @@ function setupYouTube() {
     throw new Error('Invidious: todas as instâncias falharam');
   }
 
-  // Mantemos o nome original para compatibilidade (tenta Piped depois Invidious)
+  // ── Cascata browser-side ─────────────────────────────────────────────────────
   async function fetchAudioInBrowser(videoId, item) {
-    try {
-      return await fetchAudioViaPiped(videoId, item);
-    } catch (pipedErr) {
-      console.warn('[yt] Piped falhou, tentando Invidious:', pipedErr.message);
-      return await fetchAudioViaInvidious(videoId, item);
-    }
+    try { return await fetchAudioViaPiped(videoId, item); }
+    catch (e) { console.warn('[yt] Piped falhou:', e.message); }
+
+    try { return await fetchAudioViaCobalt(videoId, item); }
+    catch (e) { console.warn('[yt] Cobalt falhou:', e.message); }
+
+    try { return await fetchAudioViaInvidious(videoId, item); }
+    catch (e) { console.warn('[yt] Invidious falhou:', e.message); }
+
+    throw new Error('Todos os métodos de browser falharam');
   }
 
   // ── Converter e fazer upload ──────────────────────────────────────────────
@@ -1058,30 +1103,27 @@ function setupYouTube() {
       let blob, ext, mimeType;
 
       try {
-        // Tentar directamente no browser (mais fiável — usa o IP do utilizador)
+        // Tentar directamente no browser (Piped → Cobalt → Invidious)
         ({ blob, ext, mimeType } = await fetchAudioInBrowser(video.id, item));
       } catch (browserErr) {
-        console.warn('[yt] Browser falhou, tentando servidor:', browserErr.message);
-        setStep(item, 'A converter via servidor…', 30);
+        console.warn('[yt] Todos os métodos browser falharam, tentando servidor:', browserErr.message);
+        setStep(item, 'A tentar via servidor (pode falhar)…', 78);
 
-        // Servidor devolve { url, mimeType, ext } — URL directa decifrada pelo ytdl-core
+        // Servidor usa ytdl-core; pode ser bloqueado pelo YouTube em IPs de datacenter.
         const apiRes = await fetch(`/api/yt-audio?id=${video.id}`);
         if (!apiRes.ok) {
-          let msg = `Erro servidor ${apiRes.status}`;
-          try { const j = await apiRes.json(); msg = j.error || msg; } catch {}
+          let msg = `Todos os métodos falharam. Descarrega o MP3 manualmente e usa o uploader em cima.`;
+          try { const j = await apiRes.json(); if (j.error) msg = j.error; } catch {}
           throw new Error(msg);
         }
         const apiData = await apiRes.json();
-        if (!apiData.url) throw new Error('Servidor não devolveu URL de áudio.');
+        if (!apiData.url) throw new Error('Servidor não devolveu URL. Tenta fazer upload manual.');
         ext      = apiData.ext      || 'm4a';
         mimeType = apiData.mimeType || 'audio/mp4';
 
-        // Descarregar o áudio directamente do YouTube no browser do utilizador
-        setStep(item, 'A fazer download do áudio…', 40);
-        const dlRes = await fetch(apiData.url, {
-          headers: { 'User-Agent': 'Mozilla/5.0', Range: 'bytes=0-' },
-        });
-        if (!dlRes.ok) throw new Error(`Download directo falhou: HTTP ${dlRes.status}`);
+        setStep(item, 'A fazer download via servidor…', 85);
+        const dlRes = await fetch(apiData.url);
+        if (!dlRes.ok) throw new Error(`Download falhou: HTTP ${dlRes.status}. Tenta upload manual.`);
         blob = await dlRes.blob();
       }
 
