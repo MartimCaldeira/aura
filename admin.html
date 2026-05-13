@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Aura — Admin</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700&display=swap" rel="stylesheet">
@@ -457,6 +458,37 @@ tr:hover td { background: rgba(255,255,255,0.015); }
 }
 #url-feedback.ok  { color: #5cb85c; }
 #url-feedback.err { color: var(--red); }
+
+/* ─── RESPONSIVE ───────────────────────────────────────── */
+@media (max-width: 640px) {
+  header { padding: 0 16px; }
+
+  main {
+    padding: 24px 16px 48px;
+    gap: 36px;
+  }
+
+  #drop-zone { padding: 32px 20px; }
+
+  /* URL form: stack all fields vertically */
+  .url-row { grid-template-columns: 1fr; }
+
+  /* Tracks table: hide artist column, simplify */
+  th:nth-child(3), td:nth-child(3) { display: none; }
+  th:nth-child(4), td:nth-child(4) { display: none; }
+
+  .td-order { width: 60px; }
+  .td-del   { width: 64px; }
+
+  table td, table th { padding: 8px 10px; }
+
+  .header-logo span { display: none; }
+}
+
+@media (max-width: 400px) {
+  .btn-move { width: 22px; height: 22px; font-size: 0.7rem; }
+  .btn-del  { font-size: 0.68rem; padding: 4px 7px; }
+}
 </style>
 </head>
 <body>
